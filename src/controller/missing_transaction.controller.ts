@@ -35,16 +35,19 @@ export const missingTransactionController = async (
         row.security_key.toString()
       );
       console.log(row);
-      if (nmiResponse) {
-        chargePayloadList = [...chargePayloadList, ...await getDataFromChargeService(nmiResponse)];
+      if (nmiResponse.length> 0) {
+        chargePayloadList = [...chargePayloadList, ...await getDataFromChargeService(nmiResponse, row.customer_id.toString())];
         let params = await bulkInsertChargeService(chargePayloadList);
         updateLocalDb(params[0], params[1], row);
+      }
+      else {
+        throw new Error("No data found");
       }
       console.log(`${index+1}/${rows.length} => completed`);
     }
     res.json(chargePayloadList);
-  } catch (error) {
+  } catch (error:any) {
     console.log(error);
-    res.status(500).json({ message: "Internal server error" });
+    res.status(500).json({ message: error.message });
   }
 };

@@ -27,6 +27,15 @@ export const getChargeEventByChargeID = (chargeID: string) => {
     `;
 };
 
+export const getChargeByCustomerID = (customerID: string) => {
+  return `
+        SELECT c.* FROM charges c
+        join subscriptions sub on sub.id = c.parent_id 
+        join customers cus on cus.id = sub.customer_id
+        WHERE cus.id = '${customerID}';
+    `;
+}
+
 export const insertChargeEvents = (events: chargeEventI) => {
   return `
       INSERT INTO charge_events (
@@ -156,7 +165,7 @@ export const insertChargesBulk = (charges: chargeI[]) => {
           '${charge.ip_address}',
           '${charge.auth_code}',
           '${charge.channel_id}',
-          '${charge.refunded_amount}',
+          '${charge.refunded_amount?charge.refunded_amount:0.00}',
           '${charge.failure_reason}'
         )`
     )

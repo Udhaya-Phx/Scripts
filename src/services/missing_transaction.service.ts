@@ -15,6 +15,7 @@ import cockroachPool from "../config/cockroach";
 import {
   deleteChargeEvents,
   getBasicChargeData,
+  getChargeByCustomerID,
   getChargeByTransactionID,
   insertCharge,
   insertChargeEvents,
@@ -112,10 +113,12 @@ export const getFromNMITransactionService = async (
 };
 
 export const getDataFromChargeService = async (
-  nmiResponses: chargePayloadI[]
+  nmiResponses: chargePayloadI[],
+  cusID: string
 ): Promise<chargeResponseI[]> => {
   try {
     let chargesRes: chargeResponseI[] = [];
+    let isSale: boolean = false;
     const transactionIDList = nmiResponses.map((nmiResponse) => {
       return nmiResponse.TransactionID;
     });
@@ -125,6 +128,12 @@ export const getDataFromChargeService = async (
     // const notExistTransactionIDList = charges.rows.filter(
     //   (transactionID) => transactionID.isexist === false
     // );
+    charges.rows = await checkTransactionIDNotExistInCRM(
+      charges.rows,
+      nmiResponses,
+      cusID
+    );
+
     for (const [index, charge] of charges.rows.entries()) {
       if (!charge.isexist) {
         const nmiResponse: chargePayloadI = nmiResponses.filter(
@@ -137,10 +146,10 @@ export const getDataFromChargeService = async (
           const chargeTransaction = charges.rows.find(
             (row) => row.t_id === nmiResponse.OriginalTransactionID
           );
-          if (chargeTransaction) {
+          if (chargeTransaction.status) {
             if (
               chargeTransaction.status === "partial_refund" ||
-              chargeTransaction.status === "refund"
+              chargeTransaction.status === "refunded"
             ) {
               continue;
             } else {
@@ -155,35 +164,39 @@ export const getDataFromChargeService = async (
                     version: 0,
                     created_at: actionDate,
                     updated_at: actionDate,
-                    amount: action.amount,
+                    amount: action.amount.split("-")[1],
                     charge_id: chargeTransaction.id ? chargeTransaction.id : "",
                     details:
-                      action.response_text !== "Approved"
+                      action.response_text.toLocaleLowerCase() !== "approved" &&
+                      action.response_text.toLocaleLowerCase() !== "success"
                         ? action.response_text
                         : "",
                     event_time: actionDate,
                     kind:
-                      action.response_text === "Approved"
+                      action.response_text.toLocaleLowerCase() === "approved" ||
+                      action.response_text.toLocaleLowerCase() === "success"
                         ? statusMapping[action.action_type]
                         : statusMapping[`failed_${action.action_type}`],
                     trigger: "system",
                     transaction_id: nmiResponse.TransactionID,
                   };
                   chargeEventList.push(chargeEvent);
-                  if (action.amount !== chargeTransaction.amount) {
+                  if (
+                    action.amount.split("-")[1] !== chargeTransaction.amount
+                  ) {
                     await cockroachPool.query(
                       updateCharge(
                         chargeTransaction.id,
                         "partial_refund",
-                        action.amount
+                        action.amount.split("-")[1]
                       )
                     );
                   } else {
                     await cockroachPool.query(
                       updateCharge(
                         chargeTransaction.id,
-                        "refund",
-                        action.amount
+                        "refunded",
+                        action.amount.split("-")[1]
                       )
                     );
                   }
@@ -225,8 +238,13 @@ export const getDataFromChargeService = async (
           };
 
           let chargeEventList: chargeEventI[] = [];
+          let isSale = false;
           for (const action of nmiResponse.action) {
             if (statusMapping[action.action_type]) {
+              if (action.action_type === "sale") {
+                isSale = true;
+                break;
+              }
               const actionDate = convertTimeStampToDateTime(
                 action.date
               ).toISOString();
@@ -238,21 +256,27 @@ export const getDataFromChargeService = async (
                 amount: action.amount,
                 charge_id: chargePayload.id ? chargePayload.id : "",
                 details:
-                  action.response_text !== "Approved"
+                  action.response_text.toLocaleLowerCase() !== "approved" &&
+                  action.response_text.toLocaleLowerCase() !== "success"
                     ? action.response_text
                     : "",
                 event_time: actionDate,
                 kind:
-                  action.response_text === "Approved"
+                  action.response_text.toLocaleLowerCase() === "approved" ||
+                  action.response_text.toLocaleLowerCase() === "success"
                     ? statusMapping[action.action_type]
                     : statusMapping[`failed_${action.action_type}`],
                 trigger: "system",
                 transaction_id: nmiResponse.TransactionID,
               };
               chargePayload.failure_reason =
-                action.response_text !== "Approved" ? action.response_text : "";
+                action.response_text.toLocaleLowerCase() !== "approved" &&
+                action.response_text.toLocaleLowerCase() !== "success"
+                  ? action.response_text
+                  : "";
               chargePayload.status =
-                action.response_text === "Approved"
+                action.response_text.toLocaleLowerCase() === "approved" ||
+                action.response_text.toLocaleLowerCase() === "success"
                   ? statusMapping[action.action_type]
                   : statusMapping[`failed_${action.action_type}`];
               chargePayload.updated_at = actionDate;
@@ -266,7 +290,7 @@ export const getDataFromChargeService = async (
           )[0];
           if (refundTransaction) {
             let chargeEventList: chargeEventI[] = [];
-            for (const action of nmiResponse.action) {
+            for (const action of refundTransaction.action) {
               if (statusMapping[action.action_type]) {
                 const actionDate = convertTimeStampToDateTime(
                   action.date
@@ -276,47 +300,59 @@ export const getDataFromChargeService = async (
                   version: 0,
                   created_at: actionDate,
                   updated_at: actionDate,
-                  amount: action.amount,
+                  amount: action.amount.split("-")[1],
                   charge_id: chargePayload.id ? chargePayload.id : "",
                   details:
-                    action.response_text !== "Approved"
+                    action.response_text.toLocaleLowerCase() !== "approved" &&
+                    action.response_text.toLocaleLowerCase() !== "success"
                       ? action.response_text
                       : "",
                   event_time: actionDate,
                   kind:
-                    action.response_text === "Approved"
+                    action.response_text.toLocaleLowerCase() === "approved" ||
+                    action.response_text.toLocaleLowerCase() === "success"
                       ? statusMapping[action.action_type]
                       : statusMapping[`failed_${action.action_type}`],
                   trigger: "system",
                   transaction_id: nmiResponse.TransactionID,
                 };
                 chargeEventList.push(chargeEvent);
-                if (action.amount !== chargePayload.amount) {
+                if (
+                  action.amount.split("-")[1] !== chargePayload.amount &&
+                  action.action_type === "refund"
+                ) {
                   chargePayload.status = "partial_refund";
-                  chargePayload.refunded_amount = action.amount;
+                  chargePayload.refunded_amount = action.amount.split("-")[1];
                 } else {
-                  chargePayload.status = "refund";
-                  chargePayload.refunded_amount = action.amount;
+                  chargePayload.status = "refunded";
+                  chargePayload.refunded_amount = action.amount.split("-")[1];
                 }
               }
             }
           }
-          chargesRes.push({
-            charges: chargePayload,
-            chargeEvent: chargeEventList,
-          });
+          if (!isSale) {
+            chargesRes.push({
+              charges: chargePayload,
+              chargeEvent: chargeEventList,
+            });
+          }
         }
       } else {
         const nmiResponse: chargePayloadI = nmiResponses.filter(
           (data) => data.TransactionID === charge.t_id
         )[0];
         if (
-          charge.status !== "voided" &&
-          nmiResponse.Condition === "canceled"
+          (charge.status !== "voided" &&
+            nmiResponse.Condition === "canceled") ||
+          ((charge.status !== "captured" &&
+            charge.status !== "partial_refund" &&
+            charge.status !== "refunded") &&
+            nmiResponse.Condition === "complete") ||
+          (charge.status !== "authorized" &&
+            nmiResponse.Condition === "pending")
         ) {
           let chargeEventList: chargeEventI[] = [];
           await cockroachPool.query(deleteChargeEvents(charge.id));
-          await cockroachPool.query(updateCharge(charge.id, "voided", "0.00"));
           for (const action of nmiResponse.action) {
             if (statusMapping[action.action_type]) {
               const actionDate = convertTimeStampToDateTime(
@@ -330,17 +366,22 @@ export const getDataFromChargeService = async (
                 amount: action.amount,
                 charge_id: charge.id ? charge.id : "",
                 details:
-                  action.response_text !== "Approved"
+                  action.response_text.toLocaleLowerCase() !== "approved" &&
+                  action.response_text.toLocaleLowerCase() !== "success"
                     ? action.response_text
                     : "",
                 event_time: actionDate,
                 kind:
-                  action.response_text === "Approved"
+                  action.response_text.toLocaleLowerCase() === "approved" ||
+                  action.response_text.toLocaleLowerCase() === "success"
                     ? statusMapping[action.action_type]
                     : statusMapping[`failed_${action.action_type}`],
                 trigger: "system",
                 transaction_id: nmiResponse.TransactionID,
               };
+              await cockroachPool.query(
+                updateCharge(charge.id, chargeEvent.kind, "0.00")
+              );
               chargeEventList.push(chargeEvent);
             }
           }
@@ -395,4 +436,40 @@ export const updateLocalDb = async (
     console.log(error);
     throw error;
   }
+};
+
+export const checkTransactionIDNotExistInCRM = async (
+  charges: any[],
+  nmiResponses: chargePayloadI[],
+  cusID: string
+) => {
+  let chargeData = await cockroachPool.query(getChargeByCustomerID(cusID));
+
+  let triggeredDate = "";
+  let reason = "";
+  let charge = chargeData.rows.filter((charge) => charge.transaction_id === "");
+  charge.forEach((data) => {
+    data.original_date = data.original_date.toISOString().split("T")[0];
+    nmiResponses.forEach((nmiResponse) => {
+      for (let i = nmiResponse.action.length - 1; i >= 0; i--) {
+        if (statusMapping[nmiResponse.action[i].action_type]) {
+          triggeredDate = nmiResponse.action[i].date;
+          reason = nmiResponse.action[i].response_text;
+          break;
+        }
+      }
+      triggeredDate = convertTimeStampToDateTime(triggeredDate)
+        .toISOString()
+        .split("T")[0];
+      if (
+        data.failure_reason === reason &&
+        data.original_date == triggeredDate
+      ) {
+        charges = charges.filter(
+          (charge) => charge.t_id !== nmiResponse.TransactionID
+        );
+      }
+    });
+  });
+  return charges;
 };

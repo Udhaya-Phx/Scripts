@@ -6,7 +6,7 @@ export const statusMapping: Record<string, string> = {
     refund: "refunded",
     failed_sale: "fail_capture",
     failed_auth: "fail_authorization",
-    failed_capture: "fail_captured",
+    failed_capture: "fail_capture",
     failed_void: "fail_voided",
     failed_refund: "fail_refunded",
   };
