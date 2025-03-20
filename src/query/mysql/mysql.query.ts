@@ -2,7 +2,7 @@ export const updateMissingTransaction = () => {
   return `UPDATE missing_transaction 
   SET charge_query = ?,
   charge_event_query = ?,
-  execution_status = 'completed'
+  execution_status = ?
   WHERE id = ? `;
 };
 

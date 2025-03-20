@@ -402,19 +402,28 @@ export const bulkInsertChargeService = async (charges: chargeResponseI[]) => {
   try {
     let chargeParams: chargeI[] = [];
     let chargeEventParams: chargeEventI[] = [];
+    let insertChargeQuery ='';
+    let insertChargeEventsQuery = '';
     charges.forEach((charge: chargeResponseI) => {
       if (charge.charges) {
         chargeParams.push(charge.charges);
       }
       chargeEventParams = [...chargeEventParams, ...charge.chargeEvent];
     });
-    const insertChargeQuery = insertChargesBulk(chargeParams);
-    if (chargeParams.length > 0) {
-      await cockroachPool.query(insertChargeQuery);
-    }
-    const insertChargeEventsQuery = insertChargeEventsBulk(chargeEventParams);
-    if (chargeEventParams.length > 0) {
-      await cockroachPool.query(insertChargeEventsQuery);
+    try {
+      insertChargeQuery = insertChargesBulk(chargeParams);
+      if (chargeParams.length > 0) {
+        await cockroachPool.query(insertChargeQuery);
+      }
+      insertChargeEventsQuery = insertChargeEventsBulk(chargeEventParams);
+      if (chargeEventParams.length > 0) {
+        await cockroachPool.query(insertChargeEventsQuery);
+      }
+      
+    } catch (error:any) {
+      if (error.message !== "duplicate key value violates unique constraint \"charges_pkey\"") {
+        throw error;
+      }
     }
     return [insertChargeQuery, insertChargeEventsQuery];
   } catch (error: any) {
@@ -426,12 +435,13 @@ export const bulkInsertChargeService = async (charges: chargeResponseI[]) => {
 export const updateLocalDb = async (
   charge: string,
   chargeEvent: string,
+  status: string,
   row: any
 ) => {
   try {
     await mySqlPool
       .promise()
-      .execute(updateMissingTransaction(), [charge, chargeEvent, row.id]);
+      .execute(updateMissingTransaction(), [charge, chargeEvent, status, row.id]);
   } catch (error: any) {
     console.log(error);
     throw error;

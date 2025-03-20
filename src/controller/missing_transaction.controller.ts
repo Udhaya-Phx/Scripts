@@ -36,12 +36,12 @@ export const missingTransactionController = async (
       );
       console.log(row);
       if (nmiResponse.length> 0) {
-        chargePayloadList = [...chargePayloadList, ...await getDataFromChargeService(nmiResponse, row.customer_id.toString())];
+        chargePayloadList = [...await getDataFromChargeService(nmiResponse, row.customer_id.toString())];
         let params = await bulkInsertChargeService(chargePayloadList);
-        updateLocalDb(params[0], params[1], row);
+        updateLocalDb(params[0], params[1], 'completed', row);
       }
       else {
-        throw new Error("No data found");
+        updateLocalDb('-','-','empty', row)
       }
       console.log(`${index+1}/${rows.length} => completed`);
     }
