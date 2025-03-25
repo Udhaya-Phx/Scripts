@@ -22,3 +22,5 @@ const seconds = timeStamp.substring(12, 14);
 // Create a Date object
 return new Date(`${year}-${month}-${day}T${hours}:${minutes}:${seconds}Z`);
 }
+
+export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

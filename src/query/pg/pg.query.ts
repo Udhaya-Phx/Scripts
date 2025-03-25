@@ -34,7 +34,7 @@ export const getChargeByCustomerID = (customerID: string) => {
         join customers cus on cus.id = sub.customer_id
         WHERE cus.id = '${customerID}';
     `;
-}
+};
 
 export const insertChargeEvents = (events: chargeEventI) => {
   return `
@@ -102,6 +102,7 @@ export const insertCharge = (charge: chargeI) => {
 };
 
 export const insertChargeEventsBulk = (events: chargeEventI[]) => {
+  if (events.length === 0) return "";
   return `
     INSERT INTO charge_events (
     id, 
@@ -128,9 +129,7 @@ export const insertChargeEventsBulk = (events: chargeEventI[]) => {
           '${event.amount}',
           '${event.details}',
           '${event.transaction_id}',
-          '${
-            event.created_at ? event.created_at : Date.now()
-          }'::TIMESTAMPTZ,
+          '${event.created_at ? event.created_at : Date.now()}'::TIMESTAMPTZ,
           '${event.updated_at ? event.updated_at : Date.now()}'::TIMESTAMPTZ
         )`
       )
@@ -165,7 +164,7 @@ export const insertChargesBulk = (charges: chargeI[]) => {
           '${charge.ip_address}',
           '${charge.auth_code}',
           '${charge.channel_id}',
-          '${charge.refunded_amount?charge.refunded_amount:0.00}',
+          '${charge.refunded_amount ? charge.refunded_amount : 0.0}',
           '${charge.failure_reason}'
         )`
     )
@@ -180,11 +179,11 @@ export const insertChargesBulk = (charges: chargeI[]) => {
   `;
 };
 
-export const getBasicChargeData = (email: string) => {
+export const getBasicChargeData = (cusID: string) => {
   return `
         select sub.id as subscription_id, sub.payment_profile_id, sub.store_id, sub.channel_id from customers cus
         join subscriptions sub on sub.customer_id = cus.id 
-        where cus.email = '${email}';
+        where cus.id = '${cusID}';
     `;
 };
 
@@ -194,9 +193,13 @@ export const deleteChargeEvents = (chargeID: string) => {
     `;
 };
 
-export const updateCharge = (chargeID: string, status: string, refundedAmount: string) => {
+export const updateCharge = (
+  chargeID: string,
+  status: string,
+  refundedAmount: string
+) => {
   return `
         UPDATE charges SET status = '${status}',
         refunded_amount = '${refundedAmount}' WHERE id = '${chargeID}';
     `;
-}
+};

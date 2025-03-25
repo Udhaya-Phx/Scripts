@@ -1,3 +1,8 @@
+export interface nmiResponse {
+  customer_id: string;
+  transactions: chargePayloadI[];
+}
+
 export interface chargePayloadI {
   TransactionID: string;
   ExternalProcessorID: string;
@@ -33,6 +38,7 @@ export interface nmiResponseI {
 }
 
 export interface transactionI {
+  customer_id: string;
   transaction_id: string[];
   partial_payment_id: string[];
   partial_payment_balance: string[];
@@ -206,11 +212,12 @@ export interface chargeI {
   ip_address: string;
   auth_code: string;
   channel_id: string;
-  refunded_amount?: string |null;
-  failure_reason?: string|null;
+  refunded_amount?: string | null;
+  failure_reason?: string | null;
 }
 
 export interface chargeResponseI {
+  customerID: string;
   charges?: chargeI;
   chargeEvent: chargeEventI[];
 }

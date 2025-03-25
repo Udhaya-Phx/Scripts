@@ -3,10 +3,9 @@ export const updateMissingTransaction = () => {
   SET charge_query = ?,
   charge_event_query = ?,
   execution_status = ?
-  WHERE id = ? `;
+  WHERE customer_id = ? `;
 };
 
-
-export const getMissingTransaction = (status: string) =>{
-    return `SELECT * FROM missing_transaction WHERE execution_status = '${status}'`
-}
+export const getMissingTransaction = (status: string) => {
+  return `SELECT * FROM missing_transaction WHERE execution_status = '${status}'`;
+};

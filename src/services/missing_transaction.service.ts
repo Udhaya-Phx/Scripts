@@ -8,6 +8,7 @@ import {
   chargeI,
   chargePayloadI,
   chargeResponseI,
+  nmiResponse,
   nmiResponseI,
   transactionI,
 } from "../interface/missing_transaction.interface";
@@ -25,6 +26,7 @@ import {
 } from "../query/pg/pg.query";
 import {
   convertTimeStampToDateTime,
+  sleep,
   statusMapping,
 } from "../utils/missing_transaction.mapping";
 import { v4 } from "uuid";
@@ -38,21 +40,26 @@ const nmiBaseUrl: string = process.env.NMI_BASE_URL
 
 export const getFromNMITransactionService = async (
   email: string,
-  securityKey: string
-): Promise<chargePayloadI[]> => {
+  securityKey: string,
+  customer_id: string
+): Promise<nmiResponse> => {
   try {
     // Fetch basic charge data
     const basicData = await cockroachPool.query(
-      getBasicChargeData(email.toLowerCase())
+      getBasicChargeData(customer_id.trim().toLowerCase())
     );
     const rowData = basicData.rows[0] || {}; // Prevents accessing undefined properties
 
     // Prepare request parameters
-    const params = qs.stringify({ security_key: securityKey, email });
+    const params = qs.stringify({
+      security_key: securityKey,
+      email: email.trim().toLowerCase(),
+    });
     const headers = {
       Accept: "application/xml",
       "Content-Type": "application/x-www-form-urlencoded",
     };
+    await sleep(6000);
 
     // Fetch transaction data from NMI
     const { data: xmlData } = await axios.post(
@@ -67,45 +74,53 @@ export const getFromNMITransactionService = async (
 
     if (!result?.nm_response?.transaction) {
       console.error("No transaction found");
-      return [];
+      return { customer_id: customer_id, transactions: [] };
     }
 
     // Map transactions to chargePayload objects
-    return result.nm_response.transaction.map((transaction: transactionI) => ({
-      TransactionID: transaction.transaction_id?.[0] || "",
-      ExternalProcessorID: transaction.processor_id?.[0] || "",
-      AVSCode: transaction.avs_response?.[0] || "",
-      CVVCode: transaction.cavv?.[0] || "",
-      AuthCode: transaction.authorization_code?.[0] || "",
-      CardBrand: transaction.cc_type?.[0] || "",
-      ChannelID: rowData.channel_id || "",
-      PaymentProfileID: rowData.payment_profile_id || "",
-      StoreID: rowData.store_id || "",
-      SubscriptionID: rowData.subscription_id || "",
-      OriginalTransactionID: transaction.original_transaction_id?.[0] || "",
-      Condition: transaction.condition?.[0] || "",
-      action:
-        transaction.action?.map((action: actionArrI) => ({
-          amount: action.amount?.[0] || "",
-          date: action.date?.[0] || "",
-          action_type: action.action_type?.[0] || "",
-          api_method: action.api_method?.[0] || "",
-          batch_id: action.batch_id?.[0] || "",
-          device_license_number: action.device_license_number?.[0] || "",
-          device_nickname: action.device_nickname?.[0] || "",
-          ip_address: action.ip_address?.[0] || "",
-          processor_batch_id: action.processor_batch_id?.[0] || "",
-          processor_response_code: action.processor_response_code?.[0] || "",
-          processor_response_text: action.processor_response_text?.[0] || "",
-          requested_amount: action.requested_amount?.[0] || "",
-          response_code: action.response_code?.[0] || "",
-          response_text: action.response_text?.[0] || "",
-          source: action.source?.[0] || "",
-          success: action.success?.[0] || "",
-          tap_to_mobile: action.tap_to_mobile?.[0] || "",
-          username: action.username?.[0] || "",
-        })) || [],
-    }));
+    return {
+      customer_id: customer_id,
+      transactions: result.nm_response.transaction.map(
+        (transaction: transactionI) => ({
+          customer_id: customer_id,
+          TransactionID: transaction.transaction_id?.[0] || "",
+          ExternalProcessorID: transaction.processor_id?.[0] || "",
+          AVSCode: transaction.avs_response?.[0] || "",
+          CVVCode: transaction.cavv?.[0] || "",
+          AuthCode: transaction.authorization_code?.[0] || "",
+          CardBrand: transaction.cc_type?.[0] || "",
+          ChannelID: rowData.channel_id || "",
+          PaymentProfileID: rowData.payment_profile_id || "",
+          StoreID: rowData.store_id || "",
+          SubscriptionID: rowData.subscription_id || "",
+          OriginalTransactionID: transaction.original_transaction_id?.[0] || "",
+          Condition: transaction.condition?.[0] || "",
+          action:
+            transaction.action?.map((action: actionArrI) => ({
+              amount: action.amount?.[0] || "",
+              date: action.date?.[0] || "",
+              action_type: action.action_type?.[0] || "",
+              api_method: action.api_method?.[0] || "",
+              batch_id: action.batch_id?.[0] || "",
+              device_license_number: action.device_license_number?.[0] || "",
+              device_nickname: action.device_nickname?.[0] || "",
+              ip_address: action.ip_address?.[0] || "",
+              processor_batch_id: action.processor_batch_id?.[0] || "",
+              processor_response_code:
+                action.processor_response_code?.[0] || "",
+              processor_response_text:
+                action.processor_response_text?.[0] || "",
+              requested_amount: action.requested_amount?.[0] || "",
+              response_code: action.response_code?.[0] || "",
+              response_text: action.response_text?.[0] || "",
+              source: action.source?.[0] || "",
+              success: action.success?.[0] || "",
+              tap_to_mobile: action.tap_to_mobile?.[0] || "",
+              username: action.username?.[0] || "",
+            })) || [],
+        })
+      ),
+    };
   } catch (error) {
     console.error("Error in getFromNMITransactionService:", error);
     throw error;
@@ -203,6 +218,7 @@ export const getDataFromChargeService = async (
                 }
               }
               chargesRes.push({
+                customerID: cusID,
                 chargeEvent: chargeEventList,
               });
             }
@@ -284,7 +300,7 @@ export const getDataFromChargeService = async (
               chargeEventList.push(chargeEvent);
             }
           }
-          console.log(index, chargePayload);
+          console.log(index);
           const refundTransaction = nmiResponses.filter(
             (res) => res.OriginalTransactionID === chargePayload.transaction_id
           )[0];
@@ -332,6 +348,7 @@ export const getDataFromChargeService = async (
           }
           if (!isSale) {
             chargesRes.push({
+              customerID: cusID,
               charges: chargePayload,
               chargeEvent: chargeEventList,
             });
@@ -344,9 +361,9 @@ export const getDataFromChargeService = async (
         if (
           (charge.status !== "voided" &&
             nmiResponse.Condition === "canceled") ||
-          ((charge.status !== "captured" &&
+          (charge.status !== "captured" &&
             charge.status !== "partial_refund" &&
-            charge.status !== "refunded") &&
+            charge.status !== "refunded" &&
             nmiResponse.Condition === "complete") ||
           (charge.status !== "authorized" &&
             nmiResponse.Condition === "pending")
@@ -386,7 +403,13 @@ export const getDataFromChargeService = async (
             }
           }
           chargesRes.push({
+            customerID: cusID,
             chargeEvent: chargeEventList,
+          });
+        } else {
+          chargesRes.push({
+            customerID: cusID,
+            chargeEvent: [],
           });
         }
       }
@@ -402,13 +425,15 @@ export const bulkInsertChargeService = async (charges: chargeResponseI[]) => {
   try {
     let chargeParams: chargeI[] = [];
     let chargeEventParams: chargeEventI[] = [];
-    let insertChargeQuery ='';
-    let insertChargeEventsQuery = '';
+    let insertChargeQuery = "";
+    let insertChargeEventsQuery = "";
+    let cusID = "";
     charges.forEach((charge: chargeResponseI) => {
       if (charge.charges) {
         chargeParams.push(charge.charges);
       }
       chargeEventParams = [...chargeEventParams, ...charge.chargeEvent];
+      cusID = charge.customerID;
     });
     try {
       insertChargeQuery = insertChargesBulk(chargeParams);
@@ -419,13 +444,15 @@ export const bulkInsertChargeService = async (charges: chargeResponseI[]) => {
       if (chargeEventParams.length > 0) {
         await cockroachPool.query(insertChargeEventsQuery);
       }
-      
-    } catch (error:any) {
-      if (error.message !== "duplicate key value violates unique constraint \"charges_pkey\"") {
+    } catch (error: any) {
+      if (
+        error.message !==
+        'duplicate key value violates unique constraint "charges_pkey"'
+      ) {
         throw error;
       }
     }
-    return [insertChargeQuery, insertChargeEventsQuery];
+    return [insertChargeQuery, insertChargeEventsQuery, cusID];
   } catch (error: any) {
     console.log(error);
     throw error;
@@ -436,12 +463,17 @@ export const updateLocalDb = async (
   charge: string,
   chargeEvent: string,
   status: string,
-  row: any
+  customer_id: string
 ) => {
   try {
     await mySqlPool
       .promise()
-      .execute(updateMissingTransaction(), [charge, chargeEvent, status, row.id]);
+      .execute(updateMissingTransaction(), [
+        charge,
+        chargeEvent,
+        status,
+        customer_id,
+      ]);
   } catch (error: any) {
     console.log(error);
     throw error;
@@ -462,15 +494,27 @@ export const checkTransactionIDNotExistInCRM = async (
     data.original_date = data.original_date.toISOString().split("T")[0];
     nmiResponses.forEach((nmiResponse) => {
       for (let i = nmiResponse.action.length - 1; i >= 0; i--) {
-        if (statusMapping[nmiResponse.action[i].action_type]) {
+        if (
+          statusMapping[nmiResponse.action[i].action_type] === "authorized" ||
+          nmiResponse.action[i].action_type === "sale"
+        ) {
           triggeredDate = nmiResponse.action[i].date;
           reason = nmiResponse.action[i].response_text;
           break;
         }
       }
-      triggeredDate = convertTimeStampToDateTime(triggeredDate)
-        .toISOString()
-        .split("T")[0];
+      const isISODateFormat = (date: string): boolean => {
+        return /^\d{4}-\d{2}-\d{2}$/.test(date);
+      };
+      
+      const isTimestampFormat = (date: string): boolean => {
+        return /^\d{17}$/.test(date); // Matches YYYYMMDDHHMMSSS
+      };
+      if (isTimestampFormat(triggeredDate)) {
+        triggeredDate = convertTimeStampToDateTime(triggeredDate)
+          .toISOString()
+          .split("T")[0];
+      } 
       if (
         data.failure_reason === reason &&
         data.original_date == triggeredDate
