@@ -26,7 +26,8 @@ export const missingTransactionController = async (
         getFromNMITransactionService(
           r.customer_email.toString(),
           r.security_key.toString(),
-          r.customer_id.toString()
+          r.customer_id.toString(),
+          r.store_id.toString()
         );
     });
 
@@ -37,8 +38,16 @@ export const missingTransactionController = async (
     );
 
     const successNmiRes = nmiResponse
-      .filter((nmi) => nmi.status === "fulfilled")
-      .map((nmi) => nmi.value);
+      .filter((nmi:any) => nmi.status === "fulfilled")
+      .map((nmi: any) => nmi.value);
+
+    const emptyNMIRes = nmiResponse
+      .filter((nmi: any) => nmi.status === "fulfilled")
+      .map((nmi: any) => {
+        if (!nmi.value?.transactions?.length) {
+          return nmi.value;
+        }
+      });
 
     const chargePromiseArr = successNmiRes
       .filter((nmi: any) => nmi?.transactions?.length)
@@ -58,11 +67,28 @@ export const missingTransactionController = async (
 
     const successChargeRes = chargeResponse
       .filter((nmi) => nmi.status === "fulfilled")
-      .map((nmi) => nmi.value);
+      .map((nmi) => {
+        if (nmi.value.charge.length > 0) {
+          return nmi.value;
+        }
+      });
+    const emptyChargeRes = chargeResponse
+      .filter((nmi) => nmi.status === "fulfilled")
+      .map((nmi) => {
+        if (!nmi.value.charge.length) {
+          return nmi.value;
+        }
+      });
 
-    const chargeInsertPromiseArr = successChargeRes.map((charge: any) => {
-      return () => bulkInsertChargeService(charge);
-    });
+    const chargeInsertPromiseArr = successChargeRes
+      .filter((charge: any) => {
+        if (charge) {
+          return charge;
+        }
+      })
+      .map((charge: any) => {
+        return () => bulkInsertChargeService(charge.charge);
+      });
 
     const chargeInsertResponse = await processInBatches(
       chargeInsertPromiseArr,
@@ -88,14 +114,21 @@ export const missingTransactionController = async (
 
     await processInBatches(updateLocalDbPromiseArr, 200, "Update local db");
 
-    const emptyNmiRes = successNmiRes
-      .filter((nmi: any) => !nmi?.transactions?.length)
+    const emptyNmiRes = emptyChargeRes
+      .filter((nmi: any) => nmi?.charge?.length == 0)
+      .map((nmi: any) => {
+        return () =>
+          updateLocalDb("empty", "empty", "empty", nmi.customerID.toString());
+      });
+      const emptyRes = emptyNMIRes
+      .filter((nmi: any) => nmi?.transactions?.length == 0)
       .map((nmi: any) => {
         return () =>
           updateLocalDb("empty", "empty", "empty", nmi.customer_id.toString());
       });
 
     await processInBatches(emptyNmiRes, 200, "Update local db");
+    await processInBatches(emptyRes, 200, "Update local db");
 
     // for (const [index, row] of rows.entries()) {
     //   console.log(`${index+1}/${rows.length} => start`);

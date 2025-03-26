@@ -41,86 +41,91 @@ const nmiBaseUrl: string = process.env.NMI_BASE_URL
 export const getFromNMITransactionService = async (
   email: string,
   securityKey: string,
-  customer_id: string
+  customer_id: string,
+  storeID: string
 ): Promise<nmiResponse> => {
   try {
     // Fetch basic charge data
     const basicData = await cockroachPool.query(
-      getBasicChargeData(customer_id.trim().toLowerCase())
+      getBasicChargeData(customer_id.trim().toLowerCase(), storeID.trim())
     );
-    const rowData = basicData.rows[0] || {}; // Prevents accessing undefined properties
+    const rowData = basicData.rows[0]; // Prevents accessing undefined properties
+    if (rowData) {
+      const params = qs.stringify({
+        security_key: securityKey.trim(),
+        email: email.trim().toLowerCase(),
+      });
+      const headers = {
+        Accept: "application/xml",
+        "Content-Type": "application/x-www-form-urlencoded",
+      };
+      await sleep(10000);
 
-    // Prepare request parameters
-    const params = qs.stringify({
-      security_key: securityKey,
-      email: email.trim().toLowerCase(),
-    });
-    const headers = {
-      Accept: "application/xml",
-      "Content-Type": "application/x-www-form-urlencoded",
-    };
-    await sleep(6000);
+      // Fetch transaction data from NMI
+      const { data: xmlData } = await axios.post(
+        `${nmiBaseUrl}/query.php`,
+        params,
+        { headers }
+      );
 
-    // Fetch transaction data from NMI
-    const { data: xmlData } = await axios.post(
-      `${nmiBaseUrl}/query.php`,
-      params,
-      { headers }
-    );
+      // Parse XML response
+      const parser = new xml2js.Parser();
+      const result: nmiResponseI = await parser.parseStringPromise(xmlData);
 
-    // Parse XML response
-    const parser = new xml2js.Parser();
-    const result: nmiResponseI = await parser.parseStringPromise(xmlData);
+      if (!result?.nm_response?.transaction) {
+        console.error("No transaction found", email);
+        return { customer_id: customer_id, transactions: [] };
+      }
 
-    if (!result?.nm_response?.transaction) {
-      console.error("No transaction found");
+      // Map transactions to chargePayload objects
+      return {
+        customer_id: customer_id,
+        transactions: result.nm_response.transaction.map(
+          (transaction: transactionI) => ({
+            customer_id: customer_id,
+            TransactionID: transaction.transaction_id?.[0] || "",
+            ExternalProcessorID: transaction.processor_id?.[0] || "",
+            AVSCode: transaction.avs_response?.[0] || "",
+            CVVCode: transaction.cavv?.[0] || "",
+            AuthCode: transaction.authorization_code?.[0] || "",
+            CardBrand: transaction.cc_type?.[0] || "",
+            ChannelID: rowData.channel_id || "",
+            PaymentProfileID: rowData.payment_profile_id || "",
+            StoreID: rowData.store_id || "",
+            SubscriptionID: rowData.subscription_id || "",
+            OriginalTransactionID:
+              transaction.original_transaction_id?.[0] || "",
+            Condition: transaction.condition?.[0] || "",
+            action:
+              transaction.action?.map((action: actionArrI) => ({
+                amount: action.amount?.[0] || "",
+                date: action.date?.[0] || "",
+                action_type: action.action_type?.[0] || "",
+                api_method: action.api_method?.[0] || "",
+                batch_id: action.batch_id?.[0] || "",
+                device_license_number: action.device_license_number?.[0] || "",
+                device_nickname: action.device_nickname?.[0] || "",
+                ip_address: action.ip_address?.[0] || "",
+                processor_batch_id: action.processor_batch_id?.[0] || "",
+                processor_response_code:
+                  action.processor_response_code?.[0] || "",
+                processor_response_text:
+                  action.processor_response_text?.[0] || "",
+                requested_amount: action.requested_amount?.[0] || "",
+                response_code: action.response_code?.[0] || "",
+                response_text: action.response_text?.[0] || "",
+                source: action.source?.[0] || "",
+                success: action.success?.[0] || "",
+                tap_to_mobile: action.tap_to_mobile?.[0] || "",
+                username: action.username?.[0] || "",
+              })) || [],
+          })
+        ),
+      };
+    } else {
       return { customer_id: customer_id, transactions: [] };
     }
-
-    // Map transactions to chargePayload objects
-    return {
-      customer_id: customer_id,
-      transactions: result.nm_response.transaction.map(
-        (transaction: transactionI) => ({
-          customer_id: customer_id,
-          TransactionID: transaction.transaction_id?.[0] || "",
-          ExternalProcessorID: transaction.processor_id?.[0] || "",
-          AVSCode: transaction.avs_response?.[0] || "",
-          CVVCode: transaction.cavv?.[0] || "",
-          AuthCode: transaction.authorization_code?.[0] || "",
-          CardBrand: transaction.cc_type?.[0] || "",
-          ChannelID: rowData.channel_id || "",
-          PaymentProfileID: rowData.payment_profile_id || "",
-          StoreID: rowData.store_id || "",
-          SubscriptionID: rowData.subscription_id || "",
-          OriginalTransactionID: transaction.original_transaction_id?.[0] || "",
-          Condition: transaction.condition?.[0] || "",
-          action:
-            transaction.action?.map((action: actionArrI) => ({
-              amount: action.amount?.[0] || "",
-              date: action.date?.[0] || "",
-              action_type: action.action_type?.[0] || "",
-              api_method: action.api_method?.[0] || "",
-              batch_id: action.batch_id?.[0] || "",
-              device_license_number: action.device_license_number?.[0] || "",
-              device_nickname: action.device_nickname?.[0] || "",
-              ip_address: action.ip_address?.[0] || "",
-              processor_batch_id: action.processor_batch_id?.[0] || "",
-              processor_response_code:
-                action.processor_response_code?.[0] || "",
-              processor_response_text:
-                action.processor_response_text?.[0] || "",
-              requested_amount: action.requested_amount?.[0] || "",
-              response_code: action.response_code?.[0] || "",
-              response_text: action.response_text?.[0] || "",
-              source: action.source?.[0] || "",
-              success: action.success?.[0] || "",
-              tap_to_mobile: action.tap_to_mobile?.[0] || "",
-              username: action.username?.[0] || "",
-            })) || [],
-        })
-      ),
-    };
+    // Prepare request parameters
   } catch (error) {
     console.error("Error in getFromNMITransactionService:", error);
     throw error;
@@ -130,7 +135,10 @@ export const getFromNMITransactionService = async (
 export const getDataFromChargeService = async (
   nmiResponses: chargePayloadI[],
   cusID: string
-): Promise<chargeResponseI[]> => {
+): Promise<{
+  customerID: string;
+  charge: chargeResponseI[];
+}> => {
   try {
     let chargesRes: chargeResponseI[] = [];
     let isSale: boolean = false;
@@ -414,7 +422,10 @@ export const getDataFromChargeService = async (
         }
       }
     }
-    return chargesRes;
+    return {
+      customerID: cusID,
+      charge: chargesRes,
+    };
   } catch (error: any) {
     console.log(error);
     throw error;
@@ -466,7 +477,7 @@ export const updateLocalDb = async (
   customer_id: string
 ) => {
   try {
-    await mySqlPool
+    const data = await mySqlPool
       .promise()
       .execute(updateMissingTransaction(), [
         charge,
@@ -506,15 +517,15 @@ export const checkTransactionIDNotExistInCRM = async (
       const isISODateFormat = (date: string): boolean => {
         return /^\d{4}-\d{2}-\d{2}$/.test(date);
       };
-      
+
       const isTimestampFormat = (date: string): boolean => {
-        return /^\d{17}$/.test(date); // Matches YYYYMMDDHHMMSSS
+        return /^\d{14}$/.test(date); // Matches YYYYMMDDHHMMSSS
       };
       if (isTimestampFormat(triggeredDate)) {
         triggeredDate = convertTimeStampToDateTime(triggeredDate)
           .toISOString()
           .split("T")[0];
-      } 
+      }
       if (
         data.failure_reason === reason &&
         data.original_date == triggeredDate

@@ -179,11 +179,11 @@ export const insertChargesBulk = (charges: chargeI[]) => {
   `;
 };
 
-export const getBasicChargeData = (cusID: string) => {
+export const getBasicChargeData = (cusID: string, storeID: string) => {
   return `
         select sub.id as subscription_id, sub.payment_profile_id, sub.store_id, sub.channel_id from customers cus
         join subscriptions sub on sub.customer_id = cus.id 
-        where cus.id = '${cusID}';
+        where cus.id = '${cusID}' and cus.store_id = '${storeID}';
     `;
 };
 
