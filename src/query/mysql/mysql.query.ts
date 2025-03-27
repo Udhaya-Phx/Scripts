@@ -13,5 +13,5 @@ export const updateMissingTransactionStatus = () => {
 };
 
 export const getMissingTransaction = (status: string) => {
-  return `SELECT * FROM missing_transaction WHERE execution_status = '${status}'`;
+  return `SELECT * FROM missing_transaction_test WHERE execution_status = '${status}'`;
 };
