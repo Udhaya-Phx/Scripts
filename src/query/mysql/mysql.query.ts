@@ -1,5 +1,5 @@
 export const updateMissingTransaction = () => {
-  return `UPDATE missing_transaction
+  return `UPDATE missing_transaction_test 
   SET charge_query = ?,
   charge_event_query = ?,
   execution_status = ?
@@ -7,11 +7,11 @@ export const updateMissingTransaction = () => {
 };
 
 export const updateMissingTransactionStatus = () => {
-  return `UPDATE missing_transaction
+  return `UPDATE missing_transaction_test
   SET execution_status = ?
   WHERE customer_id = ? `;
 };
 
 export const getMissingTransaction = (status: string) => {
-  return `SELECT * FROM missing_transaction WHERE execution_status = '${status}'`;
+  return `SELECT * FROM missing_transaction_test WHERE execution_status = '${status}'`;
 };
