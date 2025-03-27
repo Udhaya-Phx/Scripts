@@ -18,11 +18,14 @@ import {
   getBasicChargeData,
   getChargeByCustomerID,
   getChargeByTransactionID,
+  getSubDataByCustomerID,
   insertCharge,
   insertChargeEvents,
   insertChargeEventsBulk,
   insertChargesBulk,
   updateCharge,
+  updateChargeCycle,
+  updateSubscriptionCycle,
 } from "../query/pg/pg.query";
 import {
   convertTimeStampToDateTime,
@@ -134,7 +137,8 @@ export const getFromNMITransactionService = async (
 
 export const getDataFromChargeService = async (
   nmiResponses: chargePayloadI[],
-  cusID: string
+  cusID: string,
+  storeID: string
 ): Promise<{
   customerID: string;
   charge: chargeResponseI[];
@@ -154,7 +158,8 @@ export const getDataFromChargeService = async (
     charges.rows = await checkTransactionIDNotExistInCRM(
       charges.rows,
       nmiResponses,
-      cusID
+      cusID,
+      storeID
     );
 
     for (const [index, charge] of charges.rows.entries()) {
@@ -494,9 +499,12 @@ export const updateLocalDb = async (
 export const checkTransactionIDNotExistInCRM = async (
   charges: any[],
   nmiResponses: chargePayloadI[],
-  cusID: string
+  cusID: string,
+  storeID: string
 ) => {
-  let chargeData = await cockroachPool.query(getChargeByCustomerID(cusID));
+  let chargeData = await cockroachPool.query(
+    getChargeByCustomerID(cusID, storeID)
+  );
 
   let triggeredDate = "";
   let reason = "";
@@ -537,4 +545,44 @@ export const checkTransactionIDNotExistInCRM = async (
     });
   });
   return charges;
+};
+
+export const reArrangeCycleService = async (
+  customerID: string,
+  storeID: string
+): Promise<{ customerID: string; chargeList: chargeI[] }> => {
+  try {
+    const chargeData = await cockroachPool.query(
+      getChargeByCustomerID(customerID, storeID)
+    );
+    let count = 1;
+    let updatedCharge = chargeData.rows.map((charge: chargeI) => {
+      if (
+        charge.status !== "fail_authorization" &&
+        charge.status !== "fail_capture" &&
+        charge.parent_kind === "subscription"
+      ) {
+        charge.cycle_number = count.toString();
+        count++;
+      } else if (charge.parent_kind === "purchase") {
+        charge.cycle_number = '0';
+      } else {
+        charge.cycle_number = count.toString();
+      }
+      return charge;
+    });
+    // await cockroachPool.query(
+    //   updateSubscriptionCycle(customerID, storeID, count.toString())
+    // );
+    const dummy = await cockroachPool.query(
+      updateChargeCycle(JSON.stringify(updatedCharge))
+    )
+    return {
+      customerID: customerID,
+      chargeList: updatedCharge,
+    };
+  } catch (error: any) {
+    console.log(error);
+    throw error;
+  }
 };

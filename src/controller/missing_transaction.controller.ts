@@ -3,10 +3,14 @@ import {
   bulkInsertChargeService,
   getDataFromChargeService,
   getFromNMITransactionService,
+  reArrangeCycleService,
   updateLocalDb,
 } from "../services/missing_transaction.service";
 import mySqlPool from "../config/mysql";
-import { chargeResponseI } from "../interface/missing_transaction.interface";
+import {
+  chargeI,
+  chargeResponseI,
+} from "../interface/missing_transaction.interface";
 import { getMissingTransaction } from "../query/mysql/mysql.query";
 import { processInBatches } from "../helper/missing_transaction.helper";
 
@@ -38,7 +42,7 @@ export const missingTransactionController = async (
     );
 
     const successNmiRes = nmiResponse
-      .filter((nmi:any) => nmi.status === "fulfilled")
+      .filter((nmi: any) => nmi.status === "fulfilled")
       .map((nmi: any) => nmi.value);
 
     const emptyNMIRes = nmiResponse
@@ -55,7 +59,8 @@ export const missingTransactionController = async (
         return () =>
           getDataFromChargeService(
             nmi.transactions,
-            nmi.customer_id.toString()
+            nmi.customer_id.toString(),
+            nmi.store_id.toString()
           );
       });
 
@@ -106,7 +111,7 @@ export const missingTransactionController = async (
           updateLocalDb(
             charge[0],
             charge[1],
-            "completed",
+            "ready_to_arrange",
             charge[2].toString()
           );
       }
@@ -118,13 +123,23 @@ export const missingTransactionController = async (
       .filter((nmi: any) => nmi?.charge?.length == 0)
       .map((nmi: any) => {
         return () =>
-          updateLocalDb("empty", "empty", "empty", nmi.customerID.toString());
+          updateLocalDb(
+            "empty",
+            "empty",
+            "ready_to_arrange",
+            nmi.customerID.toString()
+          );
       });
-      const emptyRes = emptyNMIRes
+    const emptyRes = emptyNMIRes
       .filter((nmi: any) => nmi?.transactions?.length == 0)
       .map((nmi: any) => {
         return () =>
-          updateLocalDb("empty", "empty", "empty", nmi.customer_id.toString());
+          updateLocalDb(
+            "empty",
+            "empty",
+            "ready_to_arrange",
+            nmi.customer_id.toString()
+          );
       });
 
     await processInBatches(emptyNmiRes, 200, "Update local db");
@@ -148,6 +163,39 @@ export const missingTransactionController = async (
     //   console.log(`${index+1}/${rows.length} => completed`);
     // }
     res.json(successChargeInsertRes);
+  } catch (error: any) {
+    console.log(error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const reArrangeSubCycleController = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+    const [rows, fields]: [any, any] = await mySqlPool
+      .promise()
+      .query(getMissingTransaction("ready_to_arrange"));
+    const processChargePromiseArr = rows.map((r: any) => {
+      return () =>
+        reArrangeCycleService(r.customer_id.toString(), r.store_id.toString());
+    });
+    const processChargeResponse = await processInBatches(
+      processChargePromiseArr,
+      200,
+      "reArrangeCycleService"
+    );
+    const successRearrangeRes = processChargeResponse
+      .filter((process) => process.status === "fulfilled")
+      .map((process) => process.value);
+    const updateLocalDbPromiseArr = successRearrangeRes.map((charge: any) => {
+      return () =>
+        updateLocalDb(charge[0], charge[1], "ready_to_arrange", charge[2].toString());
+    });
+    await processInBatches(updateLocalDbPromiseArr, 200, "Update local db");
+
+    res.json({ message: "reArrangeSubCycleController" });
   } catch (error: any) {
     console.log(error);
     res.status(500).json({ message: error.message });

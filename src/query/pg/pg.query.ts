@@ -27,12 +27,19 @@ export const getChargeEventByChargeID = (chargeID: string) => {
     `;
 };
 
-export const getChargeByCustomerID = (customerID: string) => {
+export const getSubDataByCustomerID = (customerID: string, storeID: string) => {
+  return `
+    select sub.id from subscriptions sub
+    where sub.customer_id = '${customerID}' and sub.store_id = '${storeID}';  
+  `
+};
+
+export const getChargeByCustomerID = (customerID: string, storeID: string) => {
   return `
         SELECT c.* FROM charges c
         join subscriptions sub on sub.id = c.parent_id 
         join customers cus on cus.id = sub.customer_id
-        WHERE cus.id = '${customerID}';
+        WHERE cus.id = '${customerID}' and cus.store_id = '${storeID}' order by c.original_date;
     `;
 };
 
@@ -203,3 +210,18 @@ export const updateCharge = (
         refunded_amount = '${refundedAmount}' WHERE id = '${chargeID}';
     `;
 };
+
+export const updateSubscriptionCycle = (cusID: string, storeID: string, cycle: string) => {
+  return `
+        UPDATE subscriptions SET current_cycle = '${cycle}' WHERE customer_id = '${cusID}' and store_id = '${storeID}';
+    `;
+}
+
+export const updateChargeCycle = (chargeList: string) => {
+  return `
+    with updated_charges as (
+    select t.* from jsonb_array_elements('${chargeList}'::jsonb) t
+    )
+    select * from updated_charges;
+  `
+} 
