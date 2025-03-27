@@ -35,7 +35,10 @@ import {
 import { v4 } from "uuid";
 import { promises } from "dns";
 import mySqlPool from "../config/mysql";
-import { updateMissingTransaction } from "../query/mysql/mysql.query";
+import {
+  updateMissingTransaction,
+  updateMissingTransactionStatus,
+} from "../query/mysql/mysql.query";
 
 const nmiBaseUrl: string = process.env.NMI_BASE_URL
   ? process.env.NMI_BASE_URL
@@ -496,6 +499,20 @@ export const updateLocalDb = async (
   }
 };
 
+export const updateLocalDbStatus = async (
+  status: string,
+  customer_id: string
+) => {
+  try {
+    const data = await mySqlPool
+      .promise()
+      .execute(updateMissingTransactionStatus(), [status, customer_id]);
+  } catch (error: any) {
+    console.log(error);
+    throw error;
+  }
+};
+
 export const checkTransactionIDNotExistInCRM = async (
   charges: any[],
   nmiResponses: chargePayloadI[],
@@ -565,18 +582,32 @@ export const reArrangeCycleService = async (
         charge.cycle_number = count.toString();
         count++;
       } else if (charge.parent_kind === "purchase") {
-        charge.cycle_number = '0';
+        charge.cycle_number = "0";
       } else {
         charge.cycle_number = count.toString();
       }
       return charge;
     });
-    // await cockroachPool.query(
-    //   updateSubscriptionCycle(customerID, storeID, count.toString())
-    // );
-    const dummy = await cockroachPool.query(
-      updateChargeCycle(JSON.stringify(updatedCharge))
-    )
+    if (updatedCharge.length > 0) {
+      if (
+        (
+          updatedCharge[updateCharge.length - 1].status ===
+            "fail_authorization") ||
+        updatedCharge[updateCharge.length - 1].status === "fail_capture"
+      ) {
+        await cockroachPool.query(
+        updateSubscriptionCycle(customerID, storeID, (count-1).toString())
+      );
+      } else {
+        await cockroachPool.query(
+        updateSubscriptionCycle(customerID, storeID, count.toString())
+      );
+      }
+      await cockroachPool.query(
+        updateChargeCycle(JSON.stringify(updatedCharge))
+      )
+    }
+    
     return {
       customerID: customerID,
       chargeList: updatedCharge,

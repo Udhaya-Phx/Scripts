@@ -220,8 +220,15 @@ export const updateSubscriptionCycle = (cusID: string, storeID: string, cycle: s
 export const updateChargeCycle = (chargeList: string) => {
   return `
     with updated_charges as (
-    select t.* from jsonb_array_elements('${chargeList}'::jsonb) t
+    select 
+    t ->> 'id' as id,
+    t ->> 'cycle_number' as cycle_number,
+    t ->> 'original_date' as original_date
+    from jsonb_array_elements('${chargeList}'::jsonb) t
     )
-    select * from updated_charges;
+    update charges c
+    set cycle_number = uc.cycle_number::int
+    from updated_charges uc
+    where c.id = uc.id;
   `
 } 
