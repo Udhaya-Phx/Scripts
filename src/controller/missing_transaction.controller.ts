@@ -5,6 +5,7 @@ import {
   getFromNMITransactionService,
   reArrangeCycleService,
   updateLocalDb,
+  updateLocalDbStatus,
 } from "../services/missing_transaction.service";
 import mySqlPool from "../config/mysql";
 import {
@@ -179,7 +180,7 @@ export const reArrangeSubCycleController = async (
       .query(getMissingTransaction("ready_to_arrange"));
     const processChargePromiseArr = rows.map((r: any) => {
       return () =>
-        reArrangeCycleService(r.customer_id.toString(), r.store_id.toString());
+        reArrangeCycleService(r.customer_id.trim().toString(), r.store_id.trim().toString());
     });
     const processChargeResponse = await processInBatches(
       processChargePromiseArr,
@@ -191,7 +192,7 @@ export const reArrangeSubCycleController = async (
       .map((process) => process.value);
     const updateLocalDbPromiseArr = successRearrangeRes.map((charge: any) => {
       return () =>
-        updateLocalDb(charge[0], charge[1], "ready_to_arrange", charge[2].toString());
+        updateLocalDbStatus("completed", charge.customerID.toString());
     });
     await processInBatches(updateLocalDbPromiseArr, 200, "Update local db");
 
