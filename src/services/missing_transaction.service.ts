@@ -590,24 +590,33 @@ export const reArrangeCycleService = async (
     });
     if (updatedCharge.length > 0) {
       if (
-        (
-          updatedCharge[updateCharge.length - 1].status ===
-            "fail_authorization") ||
-        updatedCharge[updateCharge.length - 1].status === "fail_capture"
+        updatedCharge[updatedCharge.length - 1].status ===
+          "fail_authorization" ||
+        updatedCharge[updatedCharge.length - 1].status === "fail_capture"
       ) {
         await cockroachPool.query(
-        updateSubscriptionCycle(customerID, storeID, (count-1).toString())
-      );
+          updateSubscriptionCycle(
+            customerID,
+            storeID,
+            (
+              Number(updatedCharge[updatedCharge.length - 1].cycle_number) - 1
+            ).toString()
+          )
+        );
       } else {
         await cockroachPool.query(
-        updateSubscriptionCycle(customerID, storeID, count.toString())
-      );
+          updateSubscriptionCycle(
+            customerID,
+            storeID,
+            updatedCharge[updatedCharge.length - 1].cycle_number
+          )
+        );
       }
       await cockroachPool.query(
         updateChargeCycle(JSON.stringify(updatedCharge))
-      )
+      );
     }
-    
+
     return {
       customerID: customerID,
       chargeList: updatedCharge,
