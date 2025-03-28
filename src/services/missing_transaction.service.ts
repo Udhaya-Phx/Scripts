@@ -207,6 +207,8 @@ export const getDataFromChargeService = async (
                       action.response_text.toLocaleLowerCase() === "approved" ||
                       action.response_text.toLocaleLowerCase() === "success"
                         ? statusMapping[action.action_type]
+                        : action.action_type === "void"
+                        ? statusMapping[action.action_type]
                         : statusMapping[`failed_${action.action_type}`],
                     trigger: "system",
                     transaction_id: nmiResponse.TransactionID,
