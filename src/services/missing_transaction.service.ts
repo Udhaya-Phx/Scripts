@@ -80,11 +80,12 @@ export const getFromNMITransactionService = async (
 
       if (!result?.nm_response?.transaction) {
         console.error("No transaction found", email);
-        return { customer_id: customer_id, transactions: [] };
+        return { store_id: storeID, customer_id: customer_id, transactions: [] };
       }
 
       // Map transactions to chargePayload objects
       return {
+        store_id: storeID,
         customer_id: customer_id,
         transactions: result.nm_response.transaction.map(
           (transaction: transactionI) => ({
@@ -129,7 +130,7 @@ export const getFromNMITransactionService = async (
         ),
       };
     } else {
-      return { customer_id: customer_id, transactions: [] };
+      return { store_id: storeID, customer_id: customer_id, transactions: [] };
     }
     // Prepare request parameters
   } catch (error) {
