@@ -595,7 +595,8 @@ export const reArrangeCycleService = async (
       if (
         updatedCharge[updatedCharge.length - 1].status ===
           "fail_authorization" ||
-        updatedCharge[updatedCharge.length - 1].status === "fail_capture"
+        updatedCharge[updatedCharge.length - 1].status === "fail_capture" ||
+        updatedCharge[updatedCharge.length - 1].status === "voided"
       ) {
         await cockroachPool.query(
           updateSubscriptionCycle(
